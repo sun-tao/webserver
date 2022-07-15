@@ -12,8 +12,8 @@
 #include "locker.h"
 #include "http_conn.h"
 #include "threadpool.h"
-#include <assert.h>
 #include <signal.h>
+#include <assert.h>
 using namespace std;
 
 #define MAX_EVENT_NUMBER 10000  //最多能处理的事件数量
@@ -24,7 +24,14 @@ static int pipefd[2];
 static sort_timer_lst timer_lst;
 
 extern void addfd(int epollfd,int fd,bool oneshot);
-void sig_handler(int);
+
+void sig_handler(int sig){
+    //信号处理函数,收到信号后将其通过管道发送给主线程,主线程采用epoll监听
+    int save_errno = errno;
+    int msg = sig;
+    send(pipefd[1],(char*)&msg,1,0);
+    errno = save_errno;
+}
 
 void addsig(int sig){
     struct sigaction sa;
@@ -36,19 +43,16 @@ void addsig(int sig){
     return;
 }
 
-void sig_handler(int sig){
-    //信号处理函数,收到信号后将其通过管道发送给主线程,主线程采用epoll监听
-    int save_errno = errno;
-    int msg = sig;
-    send(pipefd[1],(char*)&msg,1,0);
-    errno = save_errno;
-}
-
 void time_handler(){
     timer_lst.tick();
     alarm(TIMESLOT);
     return;
 }
+
+// void func(http_conn* user_data){
+//     user_data->closefd();
+//     return;
+// }
 
 int main(int argc , char* argv[]){
     if (argc <= 1){  //任务数只有1个，则未带端口号，输入不正确
@@ -66,7 +70,7 @@ int main(int argc , char* argv[]){
         cout << "创建线程池失败" << endl;
         return -1; 
     }
-    
+
     int listenfd = socket(PF_INET,SOCK_STREAM,0);  //创建socket
 
     int ret = 0;
@@ -78,9 +82,6 @@ int main(int argc , char* argv[]){
     //端口复用
     int reuse = 1;
     setsockopt(listenfd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse));
-
-    ret = socketpair(PF_UNIX,SOCK_STREAM,0,pipefd);
-    assert(ret != -1);
 
     ret = bind(listenfd,(struct sockaddr*) &address, sizeof(address));
     ret = listen(listenfd,5);
@@ -97,12 +98,13 @@ int main(int argc , char* argv[]){
 
     addsig(SIGTERM);
     addsig(SIGALRM);
-
     alarm(TIMESLOT);
-    bool timeout = false;
 
+    bool timeout = false;
+    printf("start!\n");
     while(true){
         int nums = epoll_wait(epollfd,events,MAX_EVENT_NUMBER,-1); 
+        printf("go!");
         if (nums < 0 && errno != EINTR){
             cout << "epoil fail!" << endl;
             break;
@@ -111,11 +113,10 @@ int main(int argc , char* argv[]){
         for (int i = 0 ; i < nums ; i++){ //i,处理单个文件描述符和其对应事件
             int socketfd = events[i].data.fd;
             if (socketfd == listenfd){
-                printf("new user! user_num=%d\n",http_conn::user_num+1);
+                printf("new user!\n");
                 struct sockaddr_in client_address;
                 socklen_t client_address_len = sizeof(client_address);
                 int connfd = accept(listenfd,(struct sockaddr*)& client_address , &client_address_len);
-                printf("connfd=%d\n",connfd);
                 if (http_conn::user_num > MAX_FD){
                     cout << "连接的用户数量过多！" << endl;
                     close(connfd);
@@ -127,6 +128,7 @@ int main(int argc , char* argv[]){
                 }
                 users[connfd].init(connfd,client_address);
                 timer_lst.add_timer(users[connfd].timer);
+                continue;
             }
             else if(events[i].events & (EPOLLHUP | EPOLLRDHUP | EPOLLERR)){  // 这里不清楚具体含义，只知道是出现问题了
                 users[socketfd].closefd();
@@ -161,14 +163,13 @@ int main(int argc , char* argv[]){
                 //循环读，将缓冲区的内容读空
                 if (users[socketfd].mread()){ //正确读完
                     users[socketfd].timer->expire = time(nullptr) + 3 * TIMESLOT; //更新定时器时间
-                    printf("adjust timer once\n");
+                    printf("adjust timer once");
                     timer_lst.adjust_timer(users[socketfd].timer);
                     pool->appendRequest(&users[socketfd]);
                 }
                 else{ //读失败了
                     users[socketfd].closefd();
                     timer_lst.del_timer(users[socketfd].timer);
-                    printf("del successfully!\n");
                 }
             }
             else if (events[i].events & EPOLLOUT){
@@ -177,14 +178,14 @@ int main(int argc , char* argv[]){
                 if (!users[socketfd].mwrite()){
                     users[socketfd].closefd();
                     timer_lst.del_timer(users[socketfd].timer);
-                    printf("del successfully!\n");
                 }
-                else{
+                else{ 
                     users[socketfd].timer->expire = time(nullptr) + 3 * TIMESLOT; //更新定时器时间
-                    printf("adjust timer write!\n");
+                    printf("adjust timer write!");
                     timer_lst.adjust_timer(users[socketfd].timer);
                 }
             }
+
             if (timeout){
                 time_handler();
                 timeout = false;

@@ -30,6 +30,13 @@ http_conn::~http_conn(){
 void addfd(int epollfd,int fd, bool oneshot);
 void removefd(int epollfd,int fd);
 void modfd(int epollfd,int fd,int ev);
+
+void cb_func(http_conn* user_data){
+    //删除用户的相关数据
+    user_data->closefd();
+    return;
+}
+
 void http_conn::init(int connfd,struct sockaddr_in address){ //初始化user数组中http_conn对象
     m_sockfd = connfd;
     m_address = address;
@@ -59,6 +66,11 @@ void http_conn::init(){
     bzero(m_read_buf, READ_BUFFER_SIZE);
     bzero(m_write_buf, READ_BUFFER_SIZE);
     bzero(m_real_file, FILENAME_LEN);
+    util_timer* timer = new util_timer();
+    timer->cb_func = cb_func;
+    timer->expire = time(nullptr);
+    timer->user_data = this;
+    this->timer = timer;
 }
 
 void http_conn::closefd(){  //关闭客户端连接，取消epoll事件，置m_socket为-1，代表关闭了该连接
@@ -144,7 +156,7 @@ void setnoblocking(int fd){
 void addfd(int epollfd,int fd, bool oneshot){ 
     epoll_event event; //用于封装待监听的文件描述符和待监听的事件
     event.data.fd = fd;
-    event.events = EPOLLIN | EPOLLHUP;
+    event.events = EPOLLIN | EPOLLHUP | EPOLLET ;
     if (oneshot){ //同一个文件描述符上的事件无论如何都只会触发一次,为了防止一次没读完而反复触发，提高效率,2.防止线程冲突
         event.events |= EPOLLONESHOT;
     }
@@ -487,5 +499,6 @@ void http_conn::process(){
     //工作线程处理一次通信结束,通知主线程可以写入TCP缓冲区了
     //该线程继续休眠
     modfd(epollfd,m_sockfd,EPOLLOUT);
+    
     return;
 }

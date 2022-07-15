@@ -24,9 +24,8 @@ public:
 
 public:
     time_t expire; //设定的任务超时时间
-    //void (*cb_func) (client_data*);
-    //client_data* user_data;
     void (*cb_func) (http_conn*); //超时后触发任务的回调函数，用来删除用户数据的
+    //client_data* user_data;
     http_conn* user_data;
     util_timer* prev;
     util_timer* next;
@@ -56,7 +55,6 @@ public:
             tail = timer;
             return;
         }
-
         //assert(tail != nullptr);
         if (timer->expire < head->expire){
             //插入到头结点之前
@@ -118,15 +116,9 @@ public:
             delete timer;
             return;
         }
-        util_timer* tmp = head;
-        while(tmp != nullptr){
-            if (tmp == timer){
-                tmp->prev->next = tmp->next;
-                tmp->next->prev = tmp->prev;
-                break;
-            }
-            tmp = tmp->next;
-        }
+
+        timer->prev->next = timer->next;
+        timer->next->prev = timer->prev;
         delete timer;
         return;
     }

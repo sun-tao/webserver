@@ -13,8 +13,8 @@
 #include<sys/stat.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
- #include <stdarg.h>
- 
+#include <stdarg.h>
+#include "lst_timer.h"
 class http_conn{
 public:
     static const int FILENAME_LEN = 200;        // 文件名的最大长度
@@ -86,10 +86,15 @@ private:
 //     int m_socketfd;   //与客户端通信的socket
 //     struct sockaddr_in m_socket_address;  //客户端的socket地址
 
+public:
+    util_timer* timer ; //定时器
+    int getSockfd(){
+        return m_sockfd;
+    }
+    
 private:
     int m_sockfd;           // 该HTTP连接的socket和对方的socket地址
     sockaddr_in m_address;  //客户端的socket地址
-    
     char m_read_buf[ READ_BUFFER_SIZE ];    // 读缓冲区
     int m_read_idx;                         // 标识读缓冲区中已经读入的客户端数据的最后一个字节的下一个位置
     int m_checked_idx;                      // 当前正在分析的字符在读缓冲区中的位置
@@ -112,5 +117,6 @@ private:
     struct iovec m_iv[2];                   // 我们将采用writev来执行写操作，所以定义下面两个成员，其中m_iv_count表示被写内存块的数量。
     int m_iv_count;
 };
+
 
 #endif

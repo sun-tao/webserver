@@ -30,10 +30,12 @@ int main(){
     timer_lst.add_timer(timer1);
     timer_lst.showElement();
     printf("=====================\n");
-    
     timer_lst.del_timer(timer1);
-
     timer_lst.add_timer(timer2);
+    timer_lst.del_timer(timer2);
+    //timer_lst.del_timer(timer3);
+    timer_lst.add_timer(timer2);
+    timer_lst.del_timer(timer2);
 
     //timer_lst.showElement();
     return 0;
